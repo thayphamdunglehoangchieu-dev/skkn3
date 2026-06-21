@@ -1,0 +1,6 @@
+{
+  "name": "Trợ lý viết sáng kiến",
+  "description": "Trợ lý AI chuyên biệt hỗ trợ giáo viên viết sáng kiến kinh nghiệm giáo dục, đề xuất đề tài tự động, gợi ý minh chứng và tư vấn mở rộng ý tưởng từng phần.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
