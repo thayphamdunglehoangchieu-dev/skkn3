@@ -53,25 +53,66 @@ export default function App() {
   const [autoWritingLoading, setAutoWritingLoading] = useState(false);
   const [autoWritingError, setAutoWritingError] = useState("");
 
+  // Load initial API Keys from GEMINI_API_KEYS or GEMINI_API_KEY
+  const getInitialApiKeysInput = () => {
+    const savedKeys = localStorage.getItem("GEMINI_API_KEYS");
+    if (savedKeys) {
+      try {
+        const parsed = JSON.parse(savedKeys);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.join("\n");
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+    return localStorage.getItem("GEMINI_API_KEY") || "";
+  };
+
+  const hasConfiguredKeys = () => {
+    const savedKeys = localStorage.getItem("GEMINI_API_KEYS");
+    if (savedKeys) {
+      try {
+        const parsed = JSON.parse(savedKeys);
+        if (Array.isArray(parsed) && parsed.filter(k => k.trim() && k !== "MY_GEMINI_API_KEY").length > 0) {
+          return true;
+        }
+      } catch (e) {}
+    }
+    const savedKey = localStorage.getItem("GEMINI_API_KEY");
+    return !!(savedKey && savedKey.trim() !== "" && savedKey !== "MY_GEMINI_API_KEY");
+  };
+
   // Settings Modal and API Key States
   const [showSettingsModal, setShowSettingsModal] = useState(false);
-  const [apiKeyInput, setApiKeyInput] = useState(localStorage.getItem("GEMINI_API_KEY") || "");
+  const [apiKeyInput, setApiKeyInput] = useState(getInitialApiKeysInput());
   const [selectedModel, setSelectedModel] = useState(localStorage.getItem("GEMINI_MODEL") || "gemini-3-flash-preview");
   const [keyErrorMsg, setKeyErrorMsg] = useState("");
 
   useEffect(() => {
-    const savedKey = localStorage.getItem("GEMINI_API_KEY");
-    if (!savedKey || savedKey === "MY_GEMINI_API_KEY" || savedKey.trim() === "") {
+    if (!hasConfiguredKeys()) {
       setShowSettingsModal(true);
     }
   }, []);
 
   const handleSaveSettings = () => {
     if (!apiKeyInput.trim()) {
-      setKeyErrorMsg("Vui lòng điền API Key để tiếp tục sử dụng ứng dụng.");
+      setKeyErrorMsg("Vui lòng điền ít nhất một API Key để tiếp tục sử dụng ứng dụng.");
       return;
     }
-    localStorage.setItem("GEMINI_API_KEY", apiKeyInput.trim());
+
+    const keys = apiKeyInput
+      .split(/[\n,]+/)
+      .map(k => k.trim())
+      .filter(k => k.length > 0 && k !== "MY_GEMINI_API_KEY");
+
+    if (keys.length === 0) {
+      setKeyErrorMsg("Vui lòng nhập ít nhất một API Key hợp lệ.");
+      return;
+    }
+
+    localStorage.setItem("GEMINI_API_KEYS", JSON.stringify(keys));
+    localStorage.setItem("GEMINI_API_KEY", keys[0]);
     localStorage.setItem("GEMINI_MODEL", selectedModel);
     setKeyErrorMsg("");
     setShowSettingsModal(false);
@@ -897,11 +938,6 @@ Kiến tạo bởi Trợ lý viết sáng kiến - Phiên bản chuyên biệt n
                         <span className="font-semibold block text-slate-800">Cơ cấu giải pháp phân phối chi tiết</span>
                         <p className="text-[10px] text-slate-500">Trình bày ít nhất 2 đến 3 biện pháp sư phạm cụ thể</p>
                       </div>
-                    </div>
-
-                    <div className="flex gap-2 text-xs text-slate-600">
-                      <input type="checkbox" checked={draft.partC.length > 150} readOnly className="mt-0.5 rounded text-indigo-600" />
-                      <div>
                         <span className="font-semibold block text-slate-800">Đủ điều kiện kiểm chứng thực tế</span>
                         <p className="text-[10px] text-slate-500">Có số phần trăm gia tăng rõ rệt kèm minh chứng hình ảnh</p>
                       </div>
@@ -999,10 +1035,10 @@ Kiến tạo bởi Trợ lý viết sáng kiến - Phiên bản chuyên biệt n
                 <Settings className="w-5 h-5 text-indigo-600" />
                 <h3 className="font-bold text-slate-800 text-lg">Thiết lập cấu hình Gemini AI</h3>
               </div>
-              {localStorage.getItem("GEMINI_API_KEY") && (
+              {hasConfiguredKeys() && (
                 <button
                   onClick={() => {
-                    setApiKeyInput(localStorage.getItem("GEMINI_API_KEY") || "");
+                    setApiKeyInput(getInitialApiKeysInput());
                     setSelectedModel(localStorage.getItem("GEMINI_MODEL") || "gemini-3-flash-preview");
                     setKeyErrorMsg("");
                     setShowSettingsModal(false);
@@ -1016,13 +1052,13 @@ Kiến tạo bởi Trợ lý viết sáng kiến - Phiên bản chuyên biệt n
 
             <div className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Google Gemini API Key:</label>
-                <input
-                  type="password"
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Google Gemini API Keys (Một hoặc Nhiều Keys):</label>
+                <textarea
+                  rows={4}
                   value={apiKeyInput}
                   onChange={(e) => setApiKeyInput(e.target.value)}
-                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all font-mono"
-                  placeholder="Nhập API Key của bạn (AIzaSy...)"
+                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all font-mono resize-y"
+                  placeholder="Thầy cô có thể nhập 3 - 4 API Key cùng lúc (mỗi dòng một key hoặc phân tách bằng dấu phẩy) để hệ thống tự động xoay vòng tránh giới hạn (rate limit) của bản miễn phí."
                 />
                 <p className="text-[11px] text-slate-500 mt-2">
                   API Key được lưu trực tiếp trên trình duyệt của bạn (localStorage). Nếu chưa có API Key, vui lòng truy cập{" "}
@@ -1086,11 +1122,11 @@ Kiến tạo bởi Trợ lý viết sáng kiến - Phiên bản chuyên biệt n
             )}
 
             <div className="flex justify-end gap-2 border-t border-slate-100 pt-3">
-              {localStorage.getItem("GEMINI_API_KEY") && (
+              {hasConfiguredKeys() && (
                 <button
                   type="button"
                   onClick={() => {
-                    setApiKeyInput(localStorage.getItem("GEMINI_API_KEY") || "");
+                    setApiKeyInput(getInitialApiKeysInput());
                     setSelectedModel(localStorage.getItem("GEMINI_MODEL") || "gemini-3-flash-preview");
                     setKeyErrorMsg("");
                     setShowSettingsModal(false);
