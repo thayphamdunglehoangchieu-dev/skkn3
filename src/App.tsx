@@ -938,6 +938,11 @@ Kiến tạo bởi Trợ lý viết sáng kiến - Phiên bản chuyên biệt n
                         <span className="font-semibold block text-slate-800">Cơ cấu giải pháp phân phối chi tiết</span>
                         <p className="text-[10px] text-slate-500">Trình bày ít nhất 2 đến 3 biện pháp sư phạm cụ thể</p>
                       </div>
+                    </div>
+
+                    <div className="flex gap-2 text-xs text-slate-600">
+                      <input type="checkbox" checked={draft.partC.length > 150} readOnly className="mt-0.5 rounded text-indigo-600" />
+                      <div>
                         <span className="font-semibold block text-slate-800">Đủ điều kiện kiểm chứng thực tế</span>
                         <p className="text-[10px] text-slate-500">Có số phần trăm gia tăng rõ rệt kèm minh chứng hình ảnh</p>
                       </div>
