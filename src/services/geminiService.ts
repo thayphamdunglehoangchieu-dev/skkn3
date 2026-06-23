@@ -5,11 +5,54 @@ import { TitleRecommendation, GapAnalysisResult, ScoreDashboardData } from "../t
  */
 function cleanAndParseJSON(rawText: string): any {
   let cleaned = rawText.trim();
-  if (cleaned.startsWith("```")) {
-    cleaned = cleaned.replace(/^```[a-zA-Z]*\n?/, "");
-    cleaned = cleaned.replace(/\n?```$/, "");
+  
+  const firstBrace = cleaned.indexOf("{");
+  const firstBracket = cleaned.indexOf("[");
+  
+  let startIdx = -1;
+  let startChar = "";
+  let endChar = "";
+  
+  if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) {
+    startIdx = firstBrace;
+    startChar = "{";
+    endChar = "}";
+  } else if (firstBracket !== -1) {
+    startIdx = firstBracket;
+    startChar = "[";
+    endChar = "]";
   }
-  return JSON.parse(cleaned.trim());
+  
+  if (startIdx === -1) {
+    throw new Error("Không tìm thấy ký tự mở đầu JSON '{' hoặc '[' trong phản hồi của AI.");
+  }
+  
+  // Find all indices of endChar in the string
+  const endIndices: number[] = [];
+  let idx = cleaned.indexOf(endChar, startIdx);
+  while (idx !== -1) {
+    endIndices.push(idx);
+    idx = cleaned.indexOf(endChar, idx + 1);
+  }
+  
+  // Try parsing from the longest possible JSON candidate to the shortest
+  for (let i = endIndices.length - 1; i >= 0; i--) {
+    const endIdx = endIndices[i];
+    const candidate = cleaned.substring(startIdx, endIdx + 1);
+    try {
+      return JSON.parse(candidate);
+    } catch (e) {
+      // Ignore and try the next candidate
+    }
+  }
+  
+  // If all candidates failed, try parsing the whole cleaned text to throw the actual error
+  try {
+    return JSON.parse(cleaned);
+  } catch (err: any) {
+    console.error("Failed to parse JSON. Raw text was:", rawText);
+    throw new Error(`Không thể phân tích phản hồi JSON từ AI: ${err.message}`);
+  }
 }
 
 /**
@@ -21,55 +64,80 @@ async function callGeminiAPI(
   apiKey: string,
   options: { responseMimeType?: string; systemInstruction?: string } = {}
 ): Promise<string> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  const fetchWithVersion = async (apiVersion: string) => {
+    const url = `https://generativelanguage.googleapis.com/${apiVersion}/models/${model}:generateContent?key=${apiKey}`;
 
-  const contentsPayload: any = [
-    {
-      parts: [{ text: prompt }]
+    const contentsPayload: any = [
+      {
+        parts: [{ text: prompt }]
+      }
+    ];
+
+    const body: any = {
+      contents: contentsPayload
+    };
+
+    if (options.systemInstruction) {
+      body.systemInstruction = {
+        parts: [{ text: options.systemInstruction }]
+      };
     }
-  ];
 
-  const body: any = {
-    contents: contentsPayload
+    if (options.responseMimeType) {
+      body.generationConfig = {
+        responseMimeType: options.responseMimeType
+      };
+    }
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(body)
+    });
+
+    const responseText = await response.text();
+
+    if (!response.ok) {
+      let errorMsg = `API Error ${response.status}`;
+      try {
+        const errorJson = JSON.parse(responseText);
+        errorMsg = errorJson.error?.message || errorJson.error?.status || errorMsg;
+      } catch (e) {
+        errorMsg = `${errorMsg}: ${responseText.substring(0, 150)}`;
+      }
+      throw new Error(errorMsg);
+    }
+
+    let data: any;
+    try {
+      data = JSON.parse(responseText);
+    } catch (err: any) {
+      console.error(`Failed to parse Gemini API (${apiVersion}) envelope JSON. Raw response was:`, responseText);
+      throw new Error(`Phản hồi từ Google API (${apiVersion}) không hợp lệ: ${err.message}. Nội dung phản hồi: ${responseText.substring(0, 200)}...`);
+    }
+
+    const candidateText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!candidateText) {
+      throw new Error("Không có phản hồi từ mô hình AI.");
+    }
+    return candidateText;
   };
 
-  if (options.systemInstruction) {
-    body.systemInstruction = {
-      parts: [{ text: options.systemInstruction }]
-    };
-  }
-
-  if (options.responseMimeType) {
-    body.generationConfig = {
-      responseMimeType: options.responseMimeType
-    };
-  }
-
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify(body)
-  });
-
-  if (!response.ok) {
-    let errorMsg = `API Error ${response.status}`;
+  try {
+    // Try v1 first (stable endpoint)
+    return await fetchWithVersion("v1");
+  } catch (err: any) {
+    // If v1 fails because model not found or similar, try v1beta
+    console.warn(`Failed with v1 API, trying v1beta for model ${model}:`, err.message);
     try {
-      const errorJson = await response.json();
-      errorMsg = errorJson.error?.message || errorJson.error?.status || errorMsg;
-    } catch (e) {
-      // ignore
+      return await fetchWithVersion("v1beta");
+    } catch (err2: any) {
+      // If both fail, throw the error of the version that is more relevant
+      throw new Error(err2.message || err2 || "Lỗi kết nối API.");
     }
-    throw new Error(errorMsg);
   }
-
-  const data = await response.json();
-  const candidateText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!candidateText) {
-    throw new Error("Không có phản hồi từ mô hình AI.");
-  }
-  return candidateText;
 }
 
 /**
@@ -93,7 +161,8 @@ export async function generateWithFallback(
     "gemini-2.5-flash",
     "gemini-2.5-pro",
     "gemini-2.0-flash",
-    "gemini-1.5-flash"
+    "gemini-1.5-flash",
+    "gemini-1.5-pro"
   ];
 
   const uniqueChain = Array.from(new Set([selectedModel, ...baseChain]));
